@@ -1,0 +1,80 @@
+name: "Deploy API"
+description: "Deploys Glados API to Adapt"
+author: "Adapt"
+inputs:
+  aws-region:
+    description: "AWS region where servers reside"
+    required: false
+    default: "eu-west-1"
+  deploy-package:
+    description: "Name of the deployment package"
+    required: true
+  role-to-assume:
+    description: "Role to assume to get access to AWS resources"
+    required: true
+  artefact-bucket:
+    description: "Name of the S3 bucket where artefacts are stored"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure AWS OIDC credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+        role-session-name: DeployCD
+
+    - name: Get API Servers
+      id: api_servers
+      shell: bash
+      run: |
+        INSTANCE_IDS=$(aws ec2 describe-instances \
+          --region $AWS_REGION \
+          --filters "Name=instance-state-name,Values=running" \
+                    "Name=tag:Name,Values=$SERVER_NAME" \
+          --query "Reservations[].Instances[].InstanceId" \
+          --output text)
+        echo "instance_ids=$INSTANCE_IDS" >> $GITHUB_OUTPUT
+      env:
+        SERVER_NAME: api-server
+        AWS_REGION: ${{ inputs.aws-region }}
+
+    - name: Upload artefact
+      shell: bash
+      run: |
+        aws s3 cp $DEPLOY_PACKAGE s3://$S3_BUCKET_NAME/$DEPLOY_PACKAGE
+      env:
+        DEPLOY_PACKAGE: ${{ inputs.deploy-package }}
+        S3_BUCKET_NAME: ${{ inputs.artefact-bucket }}
+
+    - name: Deploy to Api Servers
+      shell: bash
+      run: |
+        aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --instance-ids $INSTANCE_IDS \
+          --parameters commands=["aws s3 cp s3://$S3_BUCKET_NAME/$DEPLOY_PACKAGE ./$DEPLOY_PACKAGE","unzip -o $DEPLOY_PACKAGE -d $DEPLOY_DIR","rm $DEPLOY_PACKAGE"] \
+          --region $AWS_REGION \
+          --output text
+      env:
+        DEPLOY_PACKAGE: ${{ inputs.deploy-package }}
+        S3_BUCKET_NAME: ${{ inputs.artefact-bucket }}
+        INSTANCE_IDS: ${{ steps.api_servers.outputs.instance_ids }}
+        DEPLOY_DIR: /opt/api
+        AWS_REGION: ${{ inputs.aws-region }}
+
+    - name: Restart servers
+      shell: bash
+      run: |
+        aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --instance-ids $INSTANCE_IDS \
+          --parameters commands=["cd $DEPLOY_DIR && sudo pm2 restart glados || sudo pm2 start npm --name glados -- run start"] \
+          --region $AWS_REGION \
+          --output text
+      env:
+        INSTANCE_IDS: ${{ steps.api_servers.outputs.instance_ids }}
+        DEPLOY_DIR: /opt/api
+        AWS_REGION: ${{ inputs.aws-region }}
