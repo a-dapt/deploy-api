@@ -44,7 +44,7 @@ runs:
     - name: Upload artefact
       shell: bash
       run: |
-        aws s3 cp $DEPLOY_PACKAGE s3://$S3_BUCKET_NAME/$DEPLOY_PACKAGE
+        aws s3 cp $DEPLOY_PACKAGE s3://$S3_BUCKET_NAME/api/$DEPLOY_PACKAGE
       env:
         DEPLOY_PACKAGE: ${{ inputs.deploy-package }}
         S3_BUCKET_NAME: ${{ inputs.artefact-bucket }}
@@ -55,7 +55,7 @@ runs:
         aws ssm send-command \
           --document-name "AWS-RunShellScript" \
           --instance-ids $INSTANCE_IDS \
-          --parameters commands=["aws s3 cp s3://$S3_BUCKET_NAME/$DEPLOY_PACKAGE ./$DEPLOY_PACKAGE","unzip -o $DEPLOY_PACKAGE -d $DEPLOY_DIR","rm $DEPLOY_PACKAGE"] \
+          --parameters commands=["aws s3 cp s3://$S3_BUCKET_NAME/api/$DEPLOY_PACKAGE ./$DEPLOY_PACKAGE","unzip -o $DEPLOY_PACKAGE -d $DEPLOY_DIR","rm $DEPLOY_PACKAGE"] \
           --region $AWS_REGION \
           --output text
       env:
