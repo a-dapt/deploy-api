@@ -34,7 +34,7 @@ permissions:
 The following is an example of how to use this action in a workflow:
 
 ```yaml
-uses: A-dapt/deploy-api@v1.0
+uses: a-dapt/deploy-api@v1.0
 with:
   deploy-package: deploy.zip
   artefact-bucket: ${{ secrets.ADAPT_DEPLOYMENT_ARTEFACTS }}
