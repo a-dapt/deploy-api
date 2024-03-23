@@ -1,6 +1,6 @@
 # deploy-api
 
-Deploy Glados API to A-dapt servers
+Deploy APIs to A-dapt servers
 
 ## Inputs
 
