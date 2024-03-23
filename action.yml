@@ -31,6 +31,7 @@ runs:
         role-session-name: DeployK8CD
 
     - name: Download a-dapt buildpacks
+      shell: bash
       run: |
         aws s3 cp s3://$ARTEFACT_BUCKET/buildpacks/$APPLICATION . --recursive
       env:
@@ -45,6 +46,7 @@ runs:
       uses: aws-actions/amazon-ecr-login@v2.0.1
 
     - name: Build, tag, and push image to Amazon ECR
+      shell: bash
       run: |
         # Use Build kit
         export DOCKER_BUILDKIT=1
@@ -60,6 +62,7 @@ runs:
         IMAGE_TAG: "latest"
 
     - name: Deploy to EKS
+      shell: bash
       run: |
         aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
 
