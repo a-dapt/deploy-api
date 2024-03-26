@@ -1,20 +1,24 @@
 # deploy-api
 
-Deploy Glados API to A-dapt servers
+Deploy APIs to A-dapt servers
 
 ## Inputs
 
-### `artefact-bucket`
+### `application-name`
 
-**Required** Name of the S3 bucket for deployment artefacts
+**Required** Name of the application to deploy. This must match the buildpack name.
 
 ### `aws-region`
 
 **Optional** AWS region to deploy to. Default `eu-west-1`
 
-### `deploy-package`
+### `buildpack-bucket`
 
-**Required** Name of the deployment package to deploy (zip)
+**Optional** Name of the S3 bucket where buildpacks are stored. Default `a-dapt-deployment-artefacts`
+
+### `cluster-name`
+
+**Optional** Name of the K8 cluster to deploy application. Default `production`
 
 ### `role-to-assume`
 
@@ -34,10 +38,9 @@ permissions:
 The following is an example of how to use this action in a workflow:
 
 ```yaml
-uses: a-dapt/deploy-api@v1.0
+uses: a-dapt/deploy-api@v2.0
 with:
-  deploy-package: deploy.zip
-  artefact-bucket: ${{ secrets.ADAPT_DEPLOYMENT_ARTEFACTS }}
+  application-name: api-glados
   role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME_ADAPT_CORE_PLATFORM }}
 ```
 
@@ -46,9 +49,3 @@ with:
 1. To release change version in the `VERSION` file and push branch to the repository
 2. Merge to master
 3. On master, run release make target `make release`
-
-## TODO (Future versions)
-
-- Version artefacts
-- Deploy with capistrano dir layout
-- Detect if deploy failed with aws ssm send-command

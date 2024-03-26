@@ -1,21 +1,25 @@
 name: "Deploy API"
-description: "Deploys Glados API to Adapt"
+description: "Deploys to Adapt"
 author: "Adapt"
 inputs:
+  application-name:
+    description: "Name of the application to deploy, must match the name of the buildpack"
+    required: true
   aws-region:
-    description: "AWS region where servers reside"
+    description: "AWS region for k8 cluster"
     required: false
     default: "eu-west-1"
-  deploy-package:
-    description: "Name of the deployment package"
-    required: true
+  buildpack-bucket:
+    description: "Name of the S3 bucket where buildpacks are stored"
+    required: false
+    default: "a-dapt-deployment-artefacts"
+  cluster-name:
+    description: "Name of the EKS cluster to deploy application"
+    required: false
+    default: "production"
   role-to-assume:
     description: "Role to assume to get access to AWS resources"
     required: true
-  artefact-bucket:
-    description: "Name of the S3 bucket where artefacts are stored"
-    required: true
-
 runs:
   using: "composite"
   steps:
@@ -24,57 +28,48 @@ runs:
       with:
         role-to-assume: ${{ inputs.role-to-assume }}
         aws-region: ${{ inputs.aws-region }}
-        role-session-name: DeployCD
+        role-session-name: DeployK8CD
 
-    - name: Get API Servers
-      id: api_servers
+    - name: Download a-dapt buildpacks
       shell: bash
       run: |
-        INSTANCE_IDS=$(aws ec2 describe-instances \
-          --region $AWS_REGION \
-          --filters "Name=instance-state-name,Values=running" \
-                    "Name=tag:Name,Values=$SERVER_NAME" \
-          --query "Reservations[].Instances[].InstanceId" \
-          --output text)
-        echo "instance_ids=$INSTANCE_IDS" >> $GITHUB_OUTPUT
+        aws s3 cp s3://$ARTEFACT_BUCKET/buildpacks/$APPLICATION . --recursive
       env:
-        SERVER_NAME: api-server
+        ARTEFACT_BUCKET: ${{ inputs.buildpack-bucket }}
+        APPLICATION: ${{ inputs.application-name }}
+
+    - name: Docker Setup Buildx
+      uses: docker/setup-buildx-action@v3.2.0
+
+    - name: Login to ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2.0.1
+
+    - name: Build, tag, and push image to Amazon ECR
+      shell: bash
+      run: |
+        # Use Build kit
+        export DOCKER_BUILDKIT=1
+
+        # Build image
+        docker buildx build --push \
+          --platform linux/amd64 \
+          --file Dockerfile \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ inputs.application-name }}
+        IMAGE_TAG: "latest"
+
+    - name: Deploy to EKS
+      shell: bash
+      run: |
+        aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+
+        helm upgrade --install  \
+          $APPLICATION -n $APPLICATION \
+          --create-namespace .chart/
+      env:
         AWS_REGION: ${{ inputs.aws-region }}
-
-    - name: Upload artefact
-      shell: bash
-      run: |
-        aws s3 cp $DEPLOY_PACKAGE s3://$S3_BUCKET_NAME/api/$DEPLOY_PACKAGE
-      env:
-        DEPLOY_PACKAGE: ${{ inputs.deploy-package }}
-        S3_BUCKET_NAME: ${{ inputs.artefact-bucket }}
-
-    - name: Deploy to Api Servers
-      shell: bash
-      run: |
-        aws ssm send-command \
-          --document-name "AWS-RunShellScript" \
-          --instance-ids $INSTANCE_IDS \
-          --parameters commands=["aws s3 cp s3://$S3_BUCKET_NAME/api/$DEPLOY_PACKAGE ./$DEPLOY_PACKAGE","unzip -o $DEPLOY_PACKAGE -d $DEPLOY_DIR","rm $DEPLOY_PACKAGE"] \
-          --region $AWS_REGION \
-          --output text
-      env:
-        DEPLOY_PACKAGE: ${{ inputs.deploy-package }}
-        S3_BUCKET_NAME: ${{ inputs.artefact-bucket }}
-        INSTANCE_IDS: ${{ steps.api_servers.outputs.instance_ids }}
-        DEPLOY_DIR: /opt/api
-        AWS_REGION: ${{ inputs.aws-region }}
-
-    - name: Restart servers
-      shell: bash
-      run: |
-        aws ssm send-command \
-          --document-name "AWS-RunShellScript" \
-          --instance-ids $INSTANCE_IDS \
-          --parameters commands=["cd $DEPLOY_DIR && sudo pm2 restart glados || sudo pm2 start npm --name glados -- run start"] \
-          --region $AWS_REGION \
-          --output text
-      env:
-        INSTANCE_IDS: ${{ steps.api_servers.outputs.instance_ids }}
-        DEPLOY_DIR: /opt/api
-        AWS_REGION: ${{ inputs.aws-region }}
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+        APPLICATION: ${{ inputs.application-name }}
